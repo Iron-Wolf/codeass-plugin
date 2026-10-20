@@ -1,0 +1,14 @@
+[versions]
+intellijPlatform = "2.19.0"
+lombok = "1.18.36"
+gson = "2.10.1"
+junit = "4.13.2"
+
+[libraries]
+lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+intellijPlatform = { id = "org.jetbrains.intellij.platform", version.ref = "intellijPlatform" }
+

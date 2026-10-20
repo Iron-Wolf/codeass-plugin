@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<idea-plugin>
+    <id>com.intellij.codeass</id>
+    <name>Code Assist</name>
+    <vendor>IW</vendor>
+
+    <description><![CDATA[
+        Simple plugin that requests an HTTP API and displays the result in the task bar.
+        <br><br>
+        Configure your API token and refresh interval in
+        <b>Settings... | Tools | Code Assist</b>.
+        <br><br>
+        Go check my repo : https://github.com/Iron-Wolf
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <b>New in 1.0.1</b><br>
+        - Add : configuration settings (with safe API storage)<br>
+        - Add : SVG icon to maximize my Swag<br>
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <statusBarWidgetFactory
+                implementation="main.PluginStatusBarFactory"
+                id="CodeAssistUniqueId"/>
+        <notificationGroup id="CodeAssistPlugin"
+                           displayType="BALLOON"/>
+        <applicationConfigurable
+                parentId="tools"
+                instance="config.PluginConfigurable"
+                id="config.PluginConfigurable"
+                displayName="Code Assist"/>
+    </extensions>
+</idea-plugin>
