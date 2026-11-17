@@ -8,6 +8,8 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.StatusBarWidget;
 import com.intellij.openapi.wm.StatusBarWidgetFactory;
 
+import ui.PluginStatusBar;
+
 public class PluginStatusBarFactory
         implements StatusBarWidgetFactory {
 

@@ -14,6 +14,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>New in 1.1.0</b><br>
+        - Fix : grab data with the new dashboard API (need login/password)<br>
+        - Add : new data in the notification
+        - Add : history popup
         <b>New in 1.0.1</b><br>
         - Add : configuration settings (with safe API storage)<br>
         - Add : SVG icon to maximize my Swag<br>
@@ -29,8 +33,8 @@
                            displayType="BALLOON"/>
         <applicationConfigurable
                 parentId="tools"
-                instance="config.PluginConfigurable"
-                id="config.PluginConfigurable"
+                instance="ui.PluginConfigurable"
+                id="ui.PluginConfigurable"
                 displayName="Code Assist"/>
     </extensions>
 </idea-plugin>

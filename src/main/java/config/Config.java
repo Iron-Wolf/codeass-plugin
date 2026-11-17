@@ -1,6 +1,8 @@
 package config;
 
-import com.intellij.openapi.application.Application;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 import com.intellij.openapi.application.ApplicationManager;
 
 public class Config {
@@ -10,37 +12,74 @@ public class Config {
     }
 
     public static final String PROJECT_NAME = "Code Assist";
-    public static final String API_URL = "https://exemple.com/info";
+    public static final String API_URL = "https://example.com/key/info";
+    @Deprecated
+    public static String API_TOKEN = null;
+
+    public static final String DASHBOARD_API_URL = "https://example.com/api-manager/dashboard/key-holders/me";
+    public static final String KEYCLOAK_HOST = "https://example.com";
+    public static final String CLIENT_ID = "PR-SSO-APP4631-GENAPI%40example.com%231";
+    public static final String CALLBACK_URL = "https://example.com/api-manager/auth/callback";
+    public static final String KEYCLOAK_AUTH_URL =
+            "%s/auth/realms/SAFIN-EXTRANET/protocol/openid-connect/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=openid"
+                    .formatted(KEYCLOAK_HOST, CLIENT_ID, URLEncoder.encode(CALLBACK_URL, StandardCharsets.UTF_8));
+    public static final String[] PROBE_URLS = new String[]{
+            Config.DASHBOARD_API_URL,
+            "https://example.com/api-manager/auth/login",
+            "https://example.com/api-manager/dashboard/"
+    };
+    public static String LOGIN = null;
+    public static String PASSWORD = null;
+
+    public static String getLogin() {
+
+        if (LOGIN != null) {
+            return LOGIN;
+        }
+
+        var storedLogin = SettingsSafe.getLogin();
+        if (storedLogin != null && !storedLogin.isBlank()) {
+            return storedLogin;
+        }
+
+        return System.getenv().getOrDefault("CODEASS_LOGIN", "");
+    }
+
+    public static String getPassword() {
+
+        if (PASSWORD != null) {
+            return PASSWORD;
+        }
+
+        var storedPassword = SettingsSafe.getPassword();
+        if (storedPassword != null && !storedPassword.isBlank()) {
+            return storedPassword;
+        }
+
+        return System.getenv().getOrDefault("CODEASS_PASSWORD", "");
+    }
 
     /**
-     * Resolves the API token to use, in order of priority:
-     * <ol>
-     *     <li>the value configured by the user in the plugin Settings (stored securely via {@link SettingsSafe})</li>
-     *     <li>the {@code API_TOKEN} environment variable (useful for local development / tests)</li>
-     *     <li>the literal {@code "none"} fallback</li>
-     * </ol>
+     * @deprecated Legacy REST API token.
      */
+    @Deprecated
     public static String getApiToken() {
 
-        String storedToken = SettingsSafe.getApiToken();
+        if (API_TOKEN != null) {
+            return API_TOKEN;
+        }
+
+        var storedToken = SettingsSafe.getApiToken();
         if (storedToken != null && !storedToken.isBlank()) {
             return storedToken;
         }
 
-        return System.getenv().getOrDefault("API_TOKEN", "none");
+        return System.getenv().getOrDefault("CODEASS_API_TOKEN", "none");
     }
 
-    /**
-     * Resolves the refresh interval (in minutes) to use, in order of priority:
-     * <ol>
-     *     <li>the value configured by the user in the plugin Settings (persisted via {@link SettingsUnsafe})</li>
-     *     <li>the default value ({@value SettingsUnsafe#DEFAULT_REFRESH_INTERVAL_MINUTES} minutes), used when no
-     *     IDE application is running (e.g. in plain unit tests)</li>
-     * </ol>
-     */
     public static long getRefreshIntervalMinutes() {
 
-        Application app = ApplicationManager.getApplication();
+        var app = ApplicationManager.getApplication();
         if (app == null) {
             return SettingsUnsafe.DEFAULT_REFRESH_INTERVAL_MINUTES;
         }

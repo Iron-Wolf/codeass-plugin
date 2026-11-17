@@ -1,50 +1,57 @@
-package main;
+package ui;
 
 import java.awt.event.MouseEvent;
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import com.google.gson.JsonParser;
-import com.google.gson.JsonSyntaxException;
+import com.intellij.icons.AllIcons;
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.StatusBarWidget;
 import com.intellij.util.Consumer;
 import com.intellij.util.concurrency.AppExecutorUtil;
 
+import codeassclient.CodeassClient;
+import codeassclient.DashboardCodeassClient;
 import config.Config;
-import utils.HttpClientCustom;
+import main.ApiResponse;
+import main.PluginStatusBarFactory;
 import utils.PluginLogger;
 
 public class PluginStatusBar
         implements StatusBarWidget, StatusBarWidget.TextPresentation {
 
-    private static final Logger LOG = Logger.getInstance(PluginStatusBar.class);
     private ScheduledFuture<?> scheduledFuture;
     private volatile boolean disposed;
 
     private StatusBar myStatusBar;
     private final Project project;
-    private final HttpClient httpClient;
+    private final CodeassClient client;
     private ApiResponse lastApiResponse = new ApiResponse.Initial();
 
     public PluginStatusBar(@NotNull Project project) {
 
+        this(project, new DashboardCodeassClient(project));
+    }
+
+    public PluginStatusBar(@NotNull Project project, @NotNull CodeassClient client) {
+
         this.project = project;
-        this.httpClient = HttpClientCustom.buildClientWithCert();
-        LOG.info("Init plugin...");
+        this.client = client;
     }
 
     @Override
@@ -63,7 +70,6 @@ public class PluginStatusBar
     public void install(@NotNull StatusBar statusBar) {
 
         this.myStatusBar = statusBar;
-        LOG.info("Plugin installed in task bar");
         initScheduler();
     }
 
@@ -76,7 +82,6 @@ public class PluginStatusBar
             scheduledFuture = null;
         }
         myStatusBar = null;
-        LOG.info(Config.PROJECT_NAME + " disposed");
     }
 
     @Override
@@ -93,7 +98,7 @@ public class PluginStatusBar
     public String getTooltipText() {
 
         var message = switch (lastApiResponse) {
-            case ApiResponse.Success s -> "%s €".formatted(s.spend());
+            case ApiResponse.Success s -> "%s &euro;".formatted(s.spend());
             case ApiResponse.Initial ignored -> "init...";
             case ApiResponse.Error e -> e.message();
         };
@@ -109,17 +114,18 @@ public class PluginStatusBar
 
     public void showStatusNotification() {
 
-        var message = "";
         if (lastApiResponse instanceof final ApiResponse.Success s) {
-            message = """
-                    <html>
-                        <b>Spend :</b> %s<br>
-                    </html>""".formatted(
-                    s.spend());
-            PluginLogger.notifyInfo(project, Config.PROJECT_NAME + " - " + s.updateTimeStr(), message);
+            var message = buildSuccessNotificationMessage(s);
+            var d = s.details();
+            if (d != null && d.history() != null && !d.history().isEmpty()) {
+                var historyAction = createHistoryAction(d.history(), d.maxBudget());
+                PluginLogger.notifyInfo(project, Config.PROJECT_NAME + " - " + s.updateTimeStr(), message, historyAction);
+            } else {
+                PluginLogger.notifyInfo(project, Config.PROJECT_NAME + " - " + s.updateTimeStr(), message);
+            }
         }
         if (lastApiResponse instanceof final ApiResponse.Error e) {
-            message = """
+            var message = """
                     <html>
                         <font color='#e06c75'>
                             <b>Last error :</b><br>%s
@@ -131,13 +137,92 @@ public class PluginStatusBar
 
     }
 
+    private NotificationAction createHistoryAction(@NotNull List<ApiResponse.HistoryCycle> history,
+                                                   @Nullable BigDecimal maxBudget) {
+
+        return new NotificationAction("History") {
+            {
+                getTemplatePresentation().setIcon(AllIcons.Vcs.History);
+            }
+
+            @Override
+            public void actionPerformed(@NotNull AnActionEvent e, @NotNull Notification notification) {
+
+                var p = project != null ? project : e.getProject();
+                HistoryPopup.showPopup(p, history, maxBudget);
+            }
+        };
+    }
+
+    static @NotNull String buildSuccessNotificationMessage(@NotNull ApiResponse.Success s) {
+
+        var d = s.details();
+        if (d == null) {
+            return """
+                    <html>
+                        <b>Spend :</b> %s &euro;<br>
+                    </html>""".formatted(s.spendStr());
+        }
+
+        var sb = new StringBuilder("<html>");
+
+        var pct = s.spend()
+                   .multiply(BigDecimal.valueOf(100))
+                   .divide(d.maxBudget(), 1, RoundingMode.HALF_UP);
+        sb.append("<b>Budget:</b> %s &euro; (<b>%s%%</b>)<br>".formatted(s.spendStr(), pct));
+
+        var remaining = d.maxBudget()
+                         .subtract(s.spend())
+                         .max(BigDecimal.ZERO);
+        sb.append("<b>Remaining:</b> %s &euro;<br>".formatted(
+                remaining.setScale(2, RoundingMode.HALF_UP).toPlainString()));
+
+        sb.append(String.format("<b>Usage:</b> %,d req &bull; %s tokens<br>",
+                                d.totalRequests(), formatTokens(d.totalTokens())));
+
+        if (d.byModel() != null && !d.byModel().isEmpty()) {
+            sb.append("<hr style='border: 0; border-top: 1px solid #555;'>");
+            sb.append("<b>By model:</b><br>");
+            for (var m : d.byModel()) {
+                sb.append(String.format("&bull; <b>%s:</b> %s &euro; <font color='gray'>(%,d req)</font><br>",
+                                        m.model(), m.spendStr(), m.requests()));
+            }
+        }
+
+        if (d.expires() != null && !d.expires().isBlank()) {
+            sb.append("<font color='gray' size='-1'>Key expires: %s</font>".formatted(
+                    formatExpirationDate(d.expires())));
+        }
+
+        sb.append("</html>");
+        return sb.toString();
+    }
+
+    public static String formatTokens(long tokens) {
+
+        if (tokens >= 1_000_000_000L) {
+            return String.format(Locale.ROOT, "%.1fB", tokens / 1_000_000_000.0);
+        } else if (tokens >= 1_000_000L) {
+            return String.format(Locale.ROOT, "%.1fM", tokens / 1_000_000.0);
+        } else if (tokens >= 1_000L) {
+            return String.format(Locale.ROOT, "%.1fK", tokens / 1_000.0);
+        }
+        return String.valueOf(tokens);
+    }
+
+    private static String formatExpirationDate(String expires) {
+
+        if (expires.length() >= 10) {
+            var date = LocalDate.parse(expires.substring(0, 10));
+            return date.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH));
+        }
+        return expires;
+    }
+
     @Override
     public @Nullable Consumer<MouseEvent> getClickConsumer() {
 
-        return event -> {
-            LOG.info("Mouse click detected ! (refresh)");
-            fetchDataImmediately();
-        };
+        return event -> fetchDataImmediately();
     }
 
     @Override
@@ -199,56 +284,7 @@ public class PluginStatusBar
 
     protected ApiResponse fetchAndGetResult() {
 
-        LOG.info("Start HTTP GET request " + Config.API_URL);
-        ApiResponse apiResponse;
-
-        try {
-            var httpRequest = HttpRequest
-                    .newBuilder()
-                    .uri(URI.create(Config.API_URL))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + Config.getApiToken())
-                    .timeout(Duration.ofSeconds(10))
-                    .GET()
-                    .build();
-
-            var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            apiResponse = parseApiResponse(httpResponse.statusCode(),
-                                           httpResponse.body());
-
-        } catch (InterruptedException | IOException e) {
-
-            apiResponse = new ApiResponse.Error(0, e.getMessage());
-            PluginLogger.notifyError(project, "Network Error",
-                                     "API call error : " + e.getMessage());
-            Thread.currentThread().interrupt();
-        }
-        return apiResponse;
-
-    }
-
-    protected static ApiResponse parseApiResponse(int statusCode, String responseBody) {
-
-        try {
-            var json = JsonParser.parseString(responseBody).getAsJsonObject();
-
-            if (statusCode != 200) {
-                var message = json.has("error")
-                        ? json.getAsJsonObject("error").get("message").getAsString()
-                        : "Unknown API error";
-                return new ApiResponse.Error(statusCode, message);
-            }
-
-            if (json.has("info")) {
-                var spend = json.getAsJsonObject("info").get("spend").getAsBigDecimal();
-                return new ApiResponse.Success(spend);
-            }
-        } catch (JsonSyntaxException e) {
-            LOG.warn(e);
-            return new ApiResponse.Error(statusCode, "Invalid JSON Format from API");
-        }
-
-        return new ApiResponse.Error(statusCode, "Missing expected JSON");
+        return client.fetchAndGetResult();
     }
 
     private void refreshOnEdt() {

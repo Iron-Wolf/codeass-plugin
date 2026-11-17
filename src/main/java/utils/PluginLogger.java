@@ -13,39 +13,77 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
 
-import config.PluginConfigurable;
+import ui.PluginConfigurable;
+import lombok.extern.slf4j.Slf4j;
 
 /**
- * Log middleware
+ * Log and notification middleware.
  */
+@Slf4j
 public final class PluginLogger {
 
     public static final String NOTIFICATION_GROUP_ID = "CodeAssistPlugin";
-    private static final Logger LOG = Logger.getInstance(PluginLogger.class);
 
     private PluginLogger() {
 
     }
 
+    public static void info(@NotNull String message) {
+
+        log.info(message);
+    }
+
+    public static void warn(@NotNull String message) {
+
+        log.warn(message);
+    }
+
+    public static void error(@NotNull String message) {
+
+        log.error(message);
+    }
+
+    public static void error(@NotNull String message, @Nullable Throwable throwable) {
+
+        log.error(message, throwable);
+    }
+
     public static void notifyError(@Nullable Project project, @NotNull String title, @NotNull String message) {
 
-        LOG.warn(title + ": " + message);
+        log.warn("{}: {}", title, message);
         notify(project, title, message, NotificationType.ERROR);
     }
 
     public static void notifyInfo(@Nullable Project project, @NotNull String title, @NotNull String message) {
 
-        notify(project, title, message, NotificationType.INFORMATION);
+        notifyInfo(project, title, message, null);
+    }
+
+    public static void notifyInfo(@Nullable Project project,
+                                  @NotNull String title,
+                                  @NotNull String message,
+                                  @Nullable NotificationAction extraAction) {
+
+        log.info("{}: {}", title, message);
+        notify(project, title, message, NotificationType.INFORMATION, extraAction);
     }
 
     private static void notify(@Nullable Project project,
                                @NotNull String title,
                                @NotNull String content,
                                @NotNull NotificationType type) {
+
+        notify(project, title, content, type, null);
+    }
+
+    private static void notify(@Nullable Project project,
+                               @NotNull String title,
+                               @NotNull String content,
+                               @NotNull NotificationType type,
+                               @Nullable NotificationAction extraAction) {
 
         Application app = ApplicationManager.getApplication();
         if (app == null) {
@@ -61,6 +99,9 @@ public final class PluginLogger {
                         notification = group.createNotification(title, content, type);
                     } else {
                         notification = new Notification(NOTIFICATION_GROUP_ID, title, content, type);
+                    }
+                    if (extraAction != null) {
+                        notification.addAction(extraAction);
                     }
                     notification.addAction(createOpenSettingsAction());
                     notification.notify(project);

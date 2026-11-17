@@ -1,5 +1,3 @@
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
-
 plugins {
     id("java")
     alias(libs.plugins.intellijPlatform)
@@ -33,13 +31,12 @@ dependencies {
         // Needed to compile/run IntelliJ platform tests (optional, disabled when offline/behind proxy)
         // testFramework(TestFrameworkType.Platform)
     }
-    // Lombok configuration
+    // Main
+    implementation(libs.gson) // Bundled into the plugin distribution
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
 
-    // Bundled into the plugin distribution automatically
-    implementation(libs.gson)
-
+    // Test
     testImplementation(libs.junit)
 }
 
@@ -60,8 +57,15 @@ intellijPlatform {
 }
 
 tasks {
+    withType<JavaCompile> {
+        options.encoding = "UTF-8"
+    }
     test {
         useJUnit()
+        testLogging {
+            showStandardStreams = true
+            events("standardOut", "standardError", "failed")
+        }
     }
     runIde {
         // Sandbox IDE gets its own config/plugins/system dirs, your real IDE is untouched
